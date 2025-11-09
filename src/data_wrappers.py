@@ -37,6 +37,14 @@ class SquadWindowDataset(Dataset):
             pick = random.randrange(len(answers))
             s = int(answers[pick]["start_token_index"])
             e = int(answers[pick]["end_token_index"])
+            # Clamp invalid indices to ignore; guard against any upstream misalignment
+            if not (0 <= s < L and 0 <= e < L and e >= s):
+                s = -100
+                e = -100
+            # Additionally ensure labels do not point to padding
+            elif attention_mask[s].item() == 0 or attention_mask[e].item() == 0:
+                s = -100
+                e = -100
         else:
             # IMPORTANT: ignore windows with no gold span
             s = -100

@@ -1,5 +1,6 @@
 # src/predict.py
 import json
+import os
 import argparse
 from typing import List, Dict, Any, Optional
 import torch
@@ -62,12 +63,28 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Try to load QA head metadata if available
+    head_type = "pointer"
+    topk_start_meta = 5
+    max_answer_len_meta = args.max_answer_len
+    cfg_path = os.path.join(args.checkpoint_dir, "qa_config.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r") as f:
+                meta = json.load(f)
+            head_type = meta.get("head_type", head_type)
+            topk_start_meta = int(meta.get("topk_start", topk_start_meta))
+            max_answer_len_meta = int(meta.get("max_answer_len", max_answer_len_meta))
+        except Exception:
+            pass
+
     # Load tokenizer and model FROM CHECKPOINT DIR (so encoder weights are the fine-tuned ones)
     tokenizer = AutoTokenizer.from_pretrained(args.checkpoint_dir, use_fast=True)
     model = QASpanProposer(
         encoder_name=args.checkpoint_dir,  # load fine-tuned encoder from folder
-        head_type="pointer",
-        topk_start=5  # this only affects how end logits are formed; training used same
+        head_type=head_type,
+        topk_start=topk_start_meta,
+        max_answer_len=max_answer_len_meta,
     ).to(device)
     # load head weights
     head_state = torch.load(f"{args.checkpoint_dir.rstrip('/')}/qa_head.pt", map_location="cpu")

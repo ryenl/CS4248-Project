@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+# Safer mask fill value for AMP/half precision (MPS-friendly)
+MASK_VAL = -1e2
+
 class ConditionalPointerHead(nn.Module):
     """
     Conditional pointer: predict start logits, then predict end logits conditioned
@@ -34,7 +37,7 @@ class ConditionalPointerHead(nn.Module):
 
         # Start logits
         start_logits = self.start_proj(H).squeeze(-1)  # [B, L]
-        start_logits = start_logits.masked_fill(attention_mask == 0, -1e9)
+        start_logits = start_logits.masked_fill(attention_mask == 0, MASK_VAL)
         start_probs = F.softmax(start_logits, dim=-1)  # [B, L]
 
         # Top-K start positions
@@ -51,19 +54,19 @@ class ConditionalPointerHead(nn.Module):
 
         # attention scores: [B, K, L]
         attn_scores = torch.einsum("bkd,bld->bkl", Q, K_) / (d ** 0.5)
-        attn_scores = attn_scores.masked_fill(attention_mask.unsqueeze(1) == 0, -1e9)
+        attn_scores = attn_scores.masked_fill(attention_mask.unsqueeze(1) == 0, MASK_VAL)
         attn = F.softmax(attn_scores, dim=-1)               # [B, K, L]
         cond_ctx = torch.einsum("bkl,bld->bkd", attn, V)    # [B, K, d]
 
         # Compare conditional context to each token to produce per-K end scores
         token_cmp = self.compare(H)                         # [B, L, d]
         end_scores_k = torch.einsum("bkd,bld->bkl", cond_ctx, token_cmp) / (d ** 0.5)  # [B, K, L]
-        end_scores_k = end_scores_k.masked_fill(attention_mask.unsqueeze(1) == 0, -1e9)
+        end_scores_k = end_scores_k.masked_fill(attention_mask.unsqueeze(1) == 0, MASK_VAL)
 
         # Weighted mixture over K using normalized top-k start probabilities
         weights = topk_probs / (topk_probs.sum(dim=-1, keepdim=True) + 1e-9)  # [B, K]
         end_logits = torch.einsum("bk,bkl->bl", weights, end_scores_k)        # [B, L]
-        end_logits = end_logits.masked_fill(attention_mask == 0, -1e9)
+        end_logits = end_logits.masked_fill(attention_mask == 0, MASK_VAL)
 
         return start_logits, end_logits
 
@@ -82,7 +85,7 @@ class BiaffineSpanHead(nn.Module):
     def forward(self, H: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         B, L, d = H.size()
         Hu = torch.matmul(H, self.U)  # [B, L, d]
-        scores = H.new_full((B, L, self.max_answer_len), fill_value=-1e9)
+        scores = H.new_full((B, L, self.max_answer_len), fill_value=MASK_VAL)
 
         for off in range(self.max_answer_len):
             valid_len = L - off
@@ -94,7 +97,7 @@ class BiaffineSpanHead(nn.Module):
             fea = torch.cat([H[:, :valid_len, :], H[:, off:, :]], dim=-1)  # [B, valid_len, 2d]
             s = bil + self.proj(fea)                                   # [B, valid_len, 1]
             m = (attention_mask[:, :valid_len] * attention_mask[:, off:]).unsqueeze(-1)  # [B, valid_len, 1]
-            s = s.masked_fill(m == 0, -1e9).squeeze(-1)  # [B, valid_len]
+            s = s.masked_fill(m == 0, MASK_VAL).squeeze(-1)  # [B, valid_len]
             scores[:, :valid_len, off] = s
 
         return scores  # [B, L, max_answer_len]

@@ -46,11 +46,18 @@ def read_data(file_path):
                 })
     return storage
 
-#Tokenize question and context into BERT input with sliding window
+# Tokenize question and context into model input with sliding window (from config)
 def tokenize(question, context):
-    encoding = tokenizer(question, context, return_offsets_mapping=True,
-                        return_overflowing_tokens=True, max_length=384, 
-                        stride=128, truncation="only_second", padding="max_length")
+    encoding = tokenizer(
+        question,
+        context,
+        return_offsets_mapping=True,
+        return_overflowing_tokens=True,
+        max_length=MAX_LENGTH,
+        stride=DOC_STRIDE,
+        truncation="only_second",
+        padding="max_length",
+    )
     return encoding
 
 #Find start and end token positions for answer text in tokenized input
@@ -83,6 +90,7 @@ def Finalize_data(input):
         question = data["question"] 
         context = data["context"]
         tokenized_test_input = tokenize(question, context)
+        has_tti = "token_type_ids" in tokenized_test_input
         answers = data["answers"]
         #Store all answer positions(for multiple answers) can be chosen randomly during training    
         id = data["id"]
@@ -103,13 +111,16 @@ def Finalize_data(input):
                             "answer_text": answer_txt
                     })
     
-            final_data.append({
+            item = {
                 "id": id,
                 "input_ids": tokenized_test_input["input_ids"][i],
                 "attention_mask": tokenized_test_input["attention_mask"][i],
-                "token_type_ids": tokenized_test_input["token_type_ids"][i],
-                "answers": answers_processed
-            })
+                "answers": answers_processed,
+            }
+            # Include token_type_ids only if tokenizer produced it (e.g., BERT). DeBERTa/Roberta omit it.
+            if has_tti:
+                item["token_type_ids"] = tokenized_test_input["token_type_ids"][i]
+            final_data.append(item)
 
     return final_data
 
@@ -129,8 +140,8 @@ def load_from_dataset(input_path):
 def check_lengths(data):
     for item in data:
         input_ids = item["input_ids"]
-        if len(input_ids) > 384:
-            print(f"Warning: Input ID length exceeds 384 tokens for ID {item['id']}")
+        if len(input_ids) > MAX_LENGTH:
+            print(f"Warning: Input ID length exceeds {MAX_LENGTH} tokens for ID {item['id']}")
 
 
 

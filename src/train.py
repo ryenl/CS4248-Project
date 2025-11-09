@@ -1,5 +1,6 @@
 # src/train.py
 import os
+import json
 import sys
 import math
 import argparse
@@ -35,8 +36,10 @@ def load_processed_split(path: str, split: str = "train"):
 
 def compute_total_steps(num_examples: int, batch_size: int, epochs: int, grad_accum: int) -> int:
     steps_per_epoch = math.ceil(num_examples / max(1, batch_size))
-    total_optimizer_steps = steps_per_epoch * max(1, epochs)
-    return max(1, total_optimizer_steps // max(1, grad_accum))
+    total_forward_steps = steps_per_epoch * max(1, epochs)
+    # Optimizer steps occur every grad_accum updates → ceil division to avoid undercount
+    total_optimizer_steps = math.ceil(total_forward_steps / max(1, grad_accum))
+    return max(1, total_optimizer_steps)
 
 
 def save_checkpoint(dir_path: str, model, tokenizer):
@@ -47,6 +50,23 @@ def save_checkpoint(dir_path: str, model, tokenizer):
     tokenizer.save_pretrained(dir_path)
     # Save the rest (QA head etc.) as a state_dict
     torch.save(to_save.state_dict(), os.path.join(dir_path, "qa_head.pt"))
+    # Write lightweight QA config to aid inference
+    qa_cfg = {
+        "head_type": getattr(to_save, "head_type", "pointer"),
+        "max_answer_len": int(getattr(to_save, "max_answer_len", 30)),
+        "label_smoothing": float(getattr(to_save, "label_smoothing", 0.0)),
+    }
+    # add topk_start if pointer head
+    try:
+        if qa_cfg["head_type"] == "pointer" and hasattr(to_save, "head") and hasattr(to_save.head, "topk"):
+            qa_cfg["topk_start"] = int(getattr(to_save.head, "topk", 5))
+    except Exception:
+        pass
+    try:
+        with open(os.path.join(dir_path, "qa_config.json"), "w") as f:
+            json.dump(qa_cfg, f)
+    except Exception:
+        pass
     print(f"[checkpoint] saved -> {dir_path}")
 
 
@@ -76,7 +96,12 @@ def main(cfg_path: str):
     label_smooth    = float(cfg.get("label_smoothing", 0.0))
     use_ema         = bool(cfg.get("ema", False))
     ema_decay       = float(cfg.get("ema_decay", 0.999))
-    num_workers     = int(cfg.get("num_workers", 0))  # 0 safest on macOS
+    # robust int parsing for num_workers
+    _nw = cfg.get("num_workers", 0)
+    try:
+        num_workers = int(_nw)
+    except Exception:
+        num_workers = 0  # safest default on macOS/MPS/CPU
 
     out_dir         = cfg["output_dir"]
     log_interval    = int(cfg.get("log_interval", 100))

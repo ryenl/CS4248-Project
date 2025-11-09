@@ -49,7 +49,7 @@ class QASpanProposer(nn.Module):
             out["end_logits"] = end_logits
 
             if start_positions is not None and end_positions is not None:
-                # DO NOT clamp; keep -100 to be ignored
+                # Respect ignore_index=-100 while avoiding NaNs when all rows are ignored
                 if self.label_smoothing > 0.0:
                     ls = self.label_smoothing
                     loss_s = label_smoothing_ce(
@@ -59,8 +59,15 @@ class QASpanProposer(nn.Module):
                         end_logits,   end_positions,   smoothing=ls, ignore_index=-100, reduction="mean"
                     )
                 else:
-                    loss_s = F.cross_entropy(start_logits, start_positions, ignore_index=-100, reduction="mean")
-                    loss_e = F.cross_entropy(end_logits,   end_positions,   ignore_index=-100, reduction="mean")
+                    valid = (start_positions != -100) & (end_positions != -100)
+                    if valid.any():
+                        loss_s = F.cross_entropy(start_logits[valid], start_positions[valid], reduction="mean")
+                        loss_e = F.cross_entropy(end_logits[valid],   end_positions[valid],   reduction="mean")
+                    else:
+                        # differentiable zero
+                        z = (start_logits.sum() + end_logits.sum()) * 0.0
+                        loss_s = z
+                        loss_e = z
                 out["loss"] = 0.5 * (loss_s + loss_e)
             return out
 
