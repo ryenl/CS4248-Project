@@ -1,11 +1,7 @@
-# Raw data (keep committed for reproducibility)
-# data/
+# Data directory (all data files)
+data/
 
 # Generated/processed data - DO NOT COMMIT
-data/processed_*/
-data/train-*-augmented.json
-data/dev-*-augmented.json
-data/*-subset.json
 predictions*.json
 comparison_results.txt
 
@@ -14,6 +10,10 @@ outputs/
 
 # Training metrics
 metrics_*.csv
+
+# Temporary configs and utility scripts
+config/test_*.yaml
+create_subset.py
 
 # Virtual environments
 .venv/
