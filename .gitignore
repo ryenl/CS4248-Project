@@ -1,4 +1,19 @@
-data
+# Raw data (keep committed for reproducibility)
+# data/
+
+# Generated/processed data - DO NOT COMMIT
+data/processed_*/
+data/train-*-augmented.json
+data/dev-*-augmented.json
+data/*-subset.json
+predictions*.json
+comparison_results.txt
+
+# Model outputs and checkpoints
+outputs/
+
+# Training metrics
+metrics_*.csv
 
 # Virtual environments
 .venv/
