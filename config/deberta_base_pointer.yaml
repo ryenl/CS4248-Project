@@ -37,9 +37,9 @@ doc_stride: 128                           # Stride for sliding windows (overlap 
 # Training Hyperparameters
 # ==============================================================================
 
-epochs: 10
-train_batch_size: 16
-grad_accum_steps: 4                       # Effective batch size = train_batch_size * grad_accum_steps = 64
+epochs: 3
+train_batch_size: 8
+grad_accum_steps: 4                       # Effective batch size = train_batch_size * grad_accum_steps = 32
 
 # Optimizer settings
 lr: 3e-5                                  # Learning rate (Adam)
